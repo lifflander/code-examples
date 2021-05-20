@@ -48,7 +48,9 @@
 #include "Kokkos_Graph.hpp"
 
 using vector_t = Kokkos::View<double*>;
-using scalar_t = Kokkos::View<double,Kokkos::CudaUVMSpace>;
+using scalar_t = Kokkos::View<double>;
+
+bool use_graph = false;
 
 struct SPMV {
   vector_t y;
@@ -131,10 +133,10 @@ void spmv(YType y, AType A, XType x) {
 struct Dot {
   vector_t x,y;
   scalar_t alpha,oldrtrans;
-  Kokkos::View<double,Kokkos::CudaHostPinnedSpace> rtrans;
+  Kokkos::View<double> rtrans;
   int invert;
 
-  Dot(vector_t& x_, vector_t& y_, scalar_t& alpha_, Kokkos::View<double,Kokkos::CudaHostPinnedSpace>& rtrans_, scalar_t& oldrtrans_, int invert_):
+  Dot(vector_t& x_, vector_t& y_, scalar_t& alpha_, Kokkos::View<double>& rtrans_, scalar_t& oldrtrans_, int invert_):
     x(x_),y(y_),alpha(alpha_),rtrans(rtrans_),oldrtrans(oldrtrans_), invert(invert_) {}
 
   KOKKOS_FUNCTION
@@ -186,11 +188,15 @@ int cg_solve(VType y, AType A, VType b, int max_iter, double tolerance, int64_t 
   int num_iters = 0;
 
   double normr     = 0;
-  Kokkos::View<double,Kokkos::CudaHostPinnedSpace> rtrans("RTrants");
+  Kokkos::View<double> rtrans("RTrants");
+  Kokkos::View<double,Kokkos::HostSpace> rtrans_host("RTrants");
+  Kokkos::View<double,Kokkos::HostSpace> alpha_host("AlphaHost");
   scalar_t alpha("Alpha");
   scalar_t beta("Alpha");
   scalar_t p_ap_dot("p_Ap_dot");
   scalar_t oldrtrans("OldTrans");
+
+  Kokkos::View<double, Kokkos::HostSpace> p_ap_dot_host("p_Ap_dot_host");
 
   VType x("x", b.extent(0));
   VType r("r", x.extent(0));
@@ -199,38 +205,47 @@ int cg_solve(VType y, AType A, VType b, int max_iter, double tolerance, int64_t 
   double one  = 1.0;
   double zero = 0.0;
 
-  alpha() = 1.;
+  alpha_host() = 1.;
+  Kokkos::deep_copy(alpha, alpha_host);
+
   axpby(p, one, x, zero, alpha, x);
   spmv(Ap, A, p);
   axpby(r, one, b, -one, alpha, Ap);
 
-  rtrans() = dot(r, r);
-  normr = std::sqrt(rtrans());
+  rtrans_host() = dot(r, r);
+
+  normr = std::sqrt(rtrans_host());
 
   if (myproc == 0) {
     std::cout << "Initial Residual = " << normr << std::endl;
   }
 
   double brkdown_tol = std::numeric_limits<double>::epsilon();
+
   // Do iteration k == 1
   {
     int k = 1;
     axpby(p, one, r, zero, beta, r);
     spmv(Ap, A, p);
+    Kokkos::deep_copy(rtrans, rtrans_host);
     Kokkos::parallel_reduce("Dot2",Ap.extent(0),Dot(Ap,p,alpha,rtrans,p_ap_dot,1));
 
     if (myproc == 0 && (k % print_freq == 0 || k == max_iter)) {
+      Kokkos::deep_copy(rtrans_host, rtrans);
       normr = std::sqrt(rtrans());
       std::cout << "Iteration = " << k << "   Residual = " << normr
                 << std::endl;
     }
-    if (p_ap_dot() < brkdown_tol) {
-      if (p_ap_dot() < 0) {
+
+    Kokkos::deep_copy(p_ap_dot_host, p_ap_dot);
+
+    if (p_ap_dot_host() < brkdown_tol) {
+      if (p_ap_dot_host() < 0) {
         std::cerr << "miniFE::cg_solve ERROR, numerical breakdown!"
                   << std::endl;
         return num_iters;
       } else
-        brkdown_tol = 0.1 * p_ap_dot();
+        brkdown_tol = 0.1 * p_ap_dot_host();
     }
 
     axpby(x, one, x, one, alpha, p);
@@ -241,64 +256,84 @@ int cg_solve(VType y, AType A, VType b, int max_iter, double tolerance, int64_t 
   int rows_per_team = 512;
   int team_size     = 1;
 
+  std::cout << "Kokkos::DefaultExecutionSpace().concurrency() = " << Kokkos::DefaultExecutionSpace().concurrency() << std::endl;
+
   // For high concurrency architecture use teams
-  if(Kokkos::DefaultExecutionSpace().concurrency() > 1024) {
-    rows_per_team = 16;
-    team_size     = 16;
+  if (Kokkos::DefaultExecutionSpace().concurrency() > 1024) {
+    rows_per_team = 8;
+    team_size     = 8;
   }
   int64_t nrows = y.extent(0);
-//#define USE_GRAPH
-  #ifdef USE_GRAPH
-  auto graph = Kokkos::Experimental::create_graph(Kokkos::DefaultExecutionSpace(), [&] (auto root) {
-    auto dot1   = root.  then_parallel_reduce("Dot1",r.extent(0),Dot(r,r,alpha,rtrans,oldrtrans,0),rtrans);
-    auto axpby1 = dot1.  then_parallel_for("AXPBY",r.extent(0),AXPBY(p, one, r, one, alpha, p));
-    auto spmvn  = axpby1.then_parallel_for("SPMV",
-           Kokkos::TeamPolicy<>((nrows + rows_per_team - 1) / rows_per_team,
-                           team_size, 8),SPMV(Ap,A,p,rows_per_team));
-    auto dot2   = spmvn.then_parallel_reduce("Dot2",Ap.extent(0),Dot(Ap,p,alpha,rtrans,p_ap_dot,1),p_ap_dot);
-    auto axpby2 = dot2.then_parallel_for("AXPBY",x.extent(0),AXPBY(x, one, x, one, alpha, p));
-// For some reason its a bit slower if one actually exposes the available concurrency
-// Simple linear graph executes a bit faster
-#if 0
-    dot2.then_parallel_for("AXPBY",r.extent(0),AXPBY(r, one, r, -one, alpha, Ap));
-#else
-    axpby2.then_parallel_for("AXPBY",r.extent(0),AXPBY(r, one, r, -one, alpha, Ap));
-#endif
 
-  });
-  #endif
+  std::cout << "nrows = " << nrows << std::endl;
+  std::cout << "r.extent(0) = " << r.extent(0) << std::endl;
+  std::cout << "rows_per_team = " << rows_per_team << std::endl;
+  std::cout << "team_size = " << team_size << std::endl;
+  std::cout << "use_graph = " << use_graph << std::endl;
 
-  for (int64_t k = 2; k <= max_iter && normr > tolerance; ++k) {
-    #ifndef USE_GRAPH
-    Kokkos::parallel_reduce("Dot1",r.extent(0),Dot(r,r,alpha,rtrans,oldrtrans,0),rtrans);
-    Kokkos::parallel_for("AXPBY",r.extent(0),AXPBY(p, one, r, one, alpha, p));
-    Kokkos::parallel_for("SPMV",
-           Kokkos::TeamPolicy<>((nrows + rows_per_team - 1) / rows_per_team,
-                           team_size, 8),SPMV(Ap,A,p,rows_per_team));
-    Kokkos::parallel_reduce("Dot2",Ap.extent(0),Dot(Ap,p,alpha,rtrans,p_ap_dot,1),p_ap_dot);
-    Kokkos::parallel_for("AXPBY",x.extent(0),AXPBY(x, one, x, one, alpha, p));
-    Kokkos::parallel_for("AXPBY",r.extent(0),AXPBY(r, one, r, -one, alpha, Ap));
-    #else
-    graph.submit();
-    #endif
+  auto per_iter = [&](int k){
     if (myproc == 0 && (k % print_freq == 0 || k == max_iter)) {
       Kokkos::fence();
-      normr = std::sqrt(rtrans());
+      Kokkos::deep_copy(rtrans_host, rtrans);
+      normr = std::sqrt(rtrans_host());
       std::cout << "Iteration = " << k << "   Residual = " << normr
                 << std::endl;
-      if (p_ap_dot() < brkdown_tol) {
-        if (p_ap_dot() < 0) {
+
+      Kokkos::deep_copy(p_ap_dot_host, p_ap_dot);
+      if (p_ap_dot_host() < brkdown_tol) {
+        if (p_ap_dot_host() < 0) {
           std::cerr << "miniFE::cg_solve ERROR, numerical breakdown!"
                     << std::endl;
-          return num_iters;
+          exit(129);
         } else
-          brkdown_tol = 0.1 * p_ap_dot();
+          brkdown_tol = 0.1 * p_ap_dot_host();
       }
     } else {
+      // if (k % 100 == 0) {
       Kokkos::fence();
-      normr = std::sqrt(rtrans());
+      Kokkos::deep_copy(rtrans_host, rtrans);
+      normr = std::sqrt(rtrans_host());
+      // }
     }
-    num_iters = k;
+  };
+
+  if (use_graph) {
+    auto graph = Kokkos::Experimental::create_graph(Kokkos::DefaultExecutionSpace(), [&] (auto root) {
+	auto dot1   = root.  then_parallel_reduce("Dot1",r.extent(0),Dot(r,r,alpha,rtrans,oldrtrans,0),rtrans);
+	auto axpby1 = dot1.  then_parallel_for("AXPBY",r.extent(0),AXPBY(p, one, r, one, alpha, p));
+	auto spmvn  = axpby1.then_parallel_for("SPMV",
+					       Kokkos::TeamPolicy<>((nrows + rows_per_team - 1) / rows_per_team,
+								    team_size, 8),SPMV(Ap,A,p,rows_per_team));
+	auto dot2   = spmvn.then_parallel_reduce("Dot2",Ap.extent(0),Dot(Ap,p,alpha,rtrans,p_ap_dot,1),p_ap_dot);
+	auto axpby2 = dot2.then_parallel_for("AXPBY",x.extent(0),AXPBY(x, one, x, one, alpha, p));
+	// For some reason its a bit slower if one actually exposes the available concurrency
+	// Simple linear graph executes a bit faster
+#if 0
+	dot2.then_parallel_for("AXPBY",r.extent(0),AXPBY(r, one, r, -one, alpha, Ap));
+#else
+	axpby2.then_parallel_for("AXPBY",r.extent(0),AXPBY(r, one, r, -one, alpha, Ap));
+#endif
+      });
+
+    for (int64_t k = 2; k <= max_iter && normr > tolerance; ++k) {
+      graph.submit();
+      Kokkos::fence();
+      per_iter(k);
+      num_iters = k;
+    }
+  } else {
+    for (int64_t k = 2; k <= max_iter && normr > tolerance; ++k) {
+      Kokkos::parallel_reduce("Dot1",r.extent(0),Dot(r,r,alpha,rtrans,oldrtrans,0),rtrans);
+      Kokkos::parallel_for("AXPBY",r.extent(0),AXPBY(p, one, r, one, alpha, p));
+      Kokkos::parallel_for("SPMV",
+			   Kokkos::TeamPolicy<>((nrows + rows_per_team - 1) / rows_per_team,
+						team_size, 8),SPMV(Ap,A,p,rows_per_team));
+      Kokkos::parallel_reduce("Dot2",Ap.extent(0),Dot(Ap,p,alpha,rtrans,p_ap_dot,1),p_ap_dot);
+      Kokkos::parallel_for("AXPBY",x.extent(0),AXPBY(x, one, x, one, alpha, p));
+      Kokkos::parallel_for("AXPBY",r.extent(0),AXPBY(r, one, r, -one, alpha, Ap));
+      per_iter(k);
+      num_iters = k;
+    }
   }
   return num_iters;
 }
@@ -306,10 +341,11 @@ int cg_solve(VType y, AType A, VType b, int max_iter, double tolerance, int64_t 
 int main(int argc, char* argv[]) {
   Kokkos::ScopeGuard guard(argc, argv);
 
-  int N            = argc > 1 ? atoi(argv[1]) : 100;
-  int max_iter     = argc > 2 ? atoi(argv[2]) : 200;
-  double tolerance = argc > 3 ? atoi(argv[3]) : 1e-7;
-  int64_t print_freq = argc > 4? atoi(argv[4]) : max_iter / 10;
+  use_graph        = argc > 1 ? atoi(argv[1]) : 0;
+  int N            = argc > 2 ? atoi(argv[2]) : 100;
+  int max_iter     = argc > 3 ? atoi(argv[3]) : 200;
+  double tolerance = argc > 4 ? atoi(argv[4]) : 1e-7;
+  int64_t print_freq = argc > 5 ? atoi(argv[5]) : max_iter / 4;
   if (print_freq < 1) print_freq = 1;
 
   CrsMatrix<Kokkos::HostSpace> h_A = Impl::generate_miniFE_matrix(N);
