@@ -3,15 +3,17 @@
 use strict;
 use warnings;
 
-my @sizes = (16, 32, 64, 128, 256, 512);
+my @sizes = (16, 32, 64, 128, 256);
 my @graph = (0, 1);
 
+my $num = 20;
+
 foreach my $use_graph (@graph) {
-    open my $out, '>', "graph.$use_graph.dat";
+    open my $out, '>', "graph-2.$use_graph.dat";
     foreach my $n (@sizes) {
         my ($gflops, $nrows, $iter, $time) = (0.0, 0, 0, 0.0);
-        foreach my $i (0..5) {
-            my $filename = "output/run.$i.$use_graph.$n.out";
+        foreach my $i (0..$num) {
+            my $filename = "output-2/run.$i.$use_graph.$n.out";
             print "Parsing configuration: N=$n use_graph=$use_graph; $filename\n";
             open my $file, '<', $filename;
             for (<$file>) {
@@ -42,14 +44,11 @@ foreach my $use_graph (@graph) {
             }
             print "$gflops, $nrows, $iter, $time\n";
             close $file;
-            goto done;
         }
-        my $avgtime = $time/5;
-        my $avggflops = $gflops/5;
+        my $avgtime = $time/$num;
+        my $avggflops = $gflops/$num;
         print $out "$n $nrows $iter $avgtime $avggflops\n";
 
     }
     close $out;
 }
-
- done:
