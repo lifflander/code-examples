@@ -73,10 +73,10 @@ foreach my $use_graph (@graph) {
             print "@gflops, $nrows, $iter, @time\n";
             close $file;
         }
-        my $avgtime = &average(@time);
-        my $avggflops = &average(@gflops);
-        my $stdtime = &stdev(@time);
-        my $stdgflops = &stdev(@gflops);
+        my $avgtime = &average(\@time);
+        my $avggflops = &average(\@gflops);
+        my $stdtime = &stdev(\@time);
+        my $stdgflops = &stdev(\@gflops);
         print $out "$n $nrows $iter $avgtime $stdtime $avggflops $stdgflops\n";
 
     }
