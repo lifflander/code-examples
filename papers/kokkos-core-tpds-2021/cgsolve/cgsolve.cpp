@@ -229,6 +229,8 @@ int cg_solve(VType y, AType A, VType b, int max_iter, double tolerance) {
 }
 
 int main(int argc, char* argv[]) {
+  MPI_Init(&argc, &argv);
+
   Kokkos::ScopeGuard guard(argc, argv);
 
   int N            = argc > 1 ? atoi(argv[1]) : 100;
@@ -294,4 +296,6 @@ int main(int argc, char* argv[]) {
            axpby_bytes * axpby_calls) /
           time,
       spmv_calls, dot_calls, axpby_calls);
+
+  MPI_Finalize();
 }

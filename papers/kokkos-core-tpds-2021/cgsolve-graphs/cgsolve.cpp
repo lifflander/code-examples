@@ -46,6 +46,7 @@
 
 #include "generate_matrix.hpp"
 #include "Kokkos_Graph.hpp"
+#include <mpi.h>
 
 using vector_t = Kokkos::View<double*>;
 using scalar_t = Kokkos::View<double>;
@@ -339,6 +340,8 @@ int cg_solve(VType y, AType A, VType b, int max_iter, double tolerance, int64_t 
 }
 
 int main(int argc, char* argv[]) {
+  MPI_Init(&argc, &argv);
+
   Kokkos::ScopeGuard guard(argc, argv);
 
   use_graph        = argc > 1 ? atoi(argv[1]) : 0;
@@ -399,4 +402,6 @@ int main(int argc, char* argv[]) {
            axpby_bytes * axpby_calls) /
           time,
       spmv_calls, dot_calls, axpby_calls);
+
+  MPI_Finalize();
 }
