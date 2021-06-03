@@ -7,7 +7,7 @@ import numpy as np
 
 d = dict()
 
-iters = [10, 50, 100, 200, 500]
+iters = [10, 20, 30, 40, 50, 100, 200, 500]
 
 for i in iters:
     d["graph"] = dict()
@@ -30,19 +30,21 @@ fig, ax = plt.subplots(figsize=(getLongGraphLen(),getLongGraphWidth()))
 
 print(d["graph"][10])
 
-x = 0.2
+x = 0.12
 for j, i in enumerate(iters):
     ax.errorbar(d["graph"][i]["N"], d["graph"][i]["ftime"], d["graph"][i]["fstd"], label="Iter=" + str(i), linewidth=1.6, color=c(j*x), marker='^', linestyle='--')
 
-ax.legend(loc='upper left')
+ax.legend(loc='upper left', fontsize=14)
 ax.yaxis.labelpad=16
 ax.set_xlabel('$N$')
 ax.set_ylabel('Per iteration time (μs)')
 
 ax.set_xscale('log')
 
+# ax.set_yscale('log')
+# plt.ylim([10, 1000])
+plt.ylim([0, 420])
 
-plt.ylim([0, 170])
 # plt.xlim([0, 1600])
 plt.rc('font', size=18)
 

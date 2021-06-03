@@ -10,11 +10,11 @@ d = dict()
 iters = [10, 20, 30, 40, 50, 100, 200, 500]
 
 for i in iters:
-    d["nograph"] = dict()
+    d["streams"] = dict()
 
 for i in iters:
-    d["nograph"][i] = readTranspose(
-        "./graph.0.dat",
+    d["streams"][i] = readTranspose(
+        "./graph.2.dat",
         [0, 1, 2, 3, 4, 5],
         ["N", "iters", "ftime", "fstd", "ptime", "pstd"],
         [1, i]
@@ -28,11 +28,11 @@ c = cm.get_cmap("Set1")
 
 fig, ax = plt.subplots(figsize=(getLongGraphLen(),getLongGraphWidth()))
 
-print(d["nograph"][10])
+print(d["streams"][10])
 
 x = 0.12
 for j, i in enumerate(iters):
-    ax.errorbar(d["nograph"][i]["N"], d["nograph"][i]["ftime"], d["nograph"][i]["fstd"], label="Iter=" + str(i), linewidth=1.6, color=c(j*x), marker='^')
+    ax.errorbar(d["streams"][i]["N"], d["streams"][i]["ftime"], d["streams"][i]["fstd"], label="Iter=" + str(i), linewidth=1.6, color=c(j*x), marker='^', linestyle='--')
 
 ax.legend(loc='upper left', fontsize=14)
 ax.yaxis.labelpad=16
@@ -45,11 +45,10 @@ ax.set_xscale('log')
 # plt.ylim([10, 1000])
 plt.ylim([0, 420])
 
-# plt.ylim([0, 420])
 # plt.xlim([0, 1600])
 plt.rc('font', size=18)
 
-plt.title("Sample Program A (No Graph)")
+plt.title("Sample Program A (Streams)")
 
 # plt.text(-150, 1.25, '(d)', fontsize=20.0, va='center')
 
