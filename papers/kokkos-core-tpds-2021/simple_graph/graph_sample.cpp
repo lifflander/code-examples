@@ -11,6 +11,10 @@
 using Vector_t = Kokkos::View<double*>;
 using Scalar_t = Kokkos::View<double>;
 
+////////////////////////////////////////////////////
+// Sample program A
+////////////////////////////////////////////////////
+
 template <class ExecSpace>
 struct Axpby {
   Vector_t x, y;
@@ -153,11 +157,10 @@ int main(int argc, char* argv[]) {
 	cudaEventCreate(&event);
 	cudaEventRecord(event, space[1].cuda_stream());
 	cudaStreamWaitEvent(space[0].cuda_stream(), event, 0);
-	// space[1].fence();
+	// space[0].fence();
 	// space[1].fence();
         Kokkos::parallel_reduce(N_policy_1, dotp_functor{x, z}, dotp);
 	space[0].fence();
-	// space[1].fence();
       }
 
       end_time = full_timer.seconds();
