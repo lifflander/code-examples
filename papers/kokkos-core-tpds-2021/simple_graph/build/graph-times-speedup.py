@@ -76,10 +76,6 @@ for _, it in enumerate(iters):
 
 print(len(x))
 print(len(y))
-
-# for s in y:
-#     print(s)
-
 print(x[0])
 print(y[0])
 
@@ -88,25 +84,15 @@ for i, xi in enumerate(y):
 
 ax.legend(loc='upper right', ncol=2, fontsize=14)
 ax.yaxis.labelpad=16
-# ax.set_xlabel('$N$')
 ax.set_ylabel('Speedup')
 
 plt.xlabel('$N$', fontweight='bold')
 plt.xticks([r + width for r in range(len(N))], [int(N[k]) for k in range(len(N))], fontsize=7)
 
-# ax.set_xscale('log')
-# ax.set_yscale('log')
-# plt.ylim([10, 1000])
-# plt.ylim([0, 420])
-
-# plt.ylim([0, 420])
 plt.ylim([0, 1.8])
-# plt.xlim([0, 1600])
 plt.rc('font', size=18)
 
 plt.title("Sample Program A (Speedup)")
-
-# plt.text(-150, 1.25, '(d)', fontsize=20.0, va='center')
 
 addAllGridLines(ax)
 
