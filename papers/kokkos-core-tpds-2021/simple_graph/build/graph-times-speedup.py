@@ -87,7 +87,7 @@ ax.yaxis.labelpad=16
 ax.set_ylabel('Speedup')
 
 plt.xlabel('$N$', fontweight='bold')
-plt.xticks([r + width for r in range(len(N))], [int(N[k]) for k in range(len(N))], fontsize=7)
+plt.xticks([r + width*3.5 for r in range(len(N))], [int(N[k]) for k in range(len(N))], fontsize=7)
 
 plt.ylim([0, 1.8])
 plt.rc('font', size=18)
@@ -95,5 +95,6 @@ plt.rc('font', size=18)
 plt.title("Sample Program A (Speedup)")
 
 addAllGridLines(ax)
+ax.xaxis.set_tick_params(which='minor', bottom=False)
 
 writeFile(__file__, fig)
