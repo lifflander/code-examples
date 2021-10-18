@@ -1,0 +1,12 @@
+Initial Residual = 65.0072
+Kokkos::DefaultExecutionSpace().concurrency() = 163840
+nrows = 274625
+r.extent(0) = 274625
+rows_per_team = 8
+team_size = 8
+use_graph = 0
+Iteration = 50   Residual = 0.00627411
+Iteration = 100   Residual = 5.82655e-06
+Iteration = 150   Residual = 3.25582e-10
+CGSolve for 3D (64 64 64); 150 iterations; 0.036318 time
+Performance: 74.179371 GFlop/s 799.385093 GB/s (Calls SPMV: 151 Dot: 150 AXPBY: 452
