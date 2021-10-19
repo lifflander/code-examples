@@ -1,0 +1,4 @@
+use_graph=0, N=1024, iters=10
+Setup complete
+Starting iteration 0...
+full_time=0.000218, part_time=0.000177
